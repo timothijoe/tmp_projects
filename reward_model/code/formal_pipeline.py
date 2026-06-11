@@ -11,7 +11,10 @@ DEFAULT_OUTPUT_DIR = PROJECT_ROOT / "outputs" / "single"
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the complete formal reward model pipeline.")
+    parser = argparse.ArgumentParser(
+        description="Run the complete formal reward model pipeline.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument("--reference", default=DEFAULT_REFERENCE, help="第一句/标准 CoC 总结")
     parser.add_argument("--candidate", default=DEFAULT_CANDIDATE, help="第二句/候选 CoC 总结")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="JSON 输出目录")

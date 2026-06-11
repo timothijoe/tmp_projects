@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 
 DEFAULT_MODEL = "qwen3-vl-8b"
@@ -183,11 +183,11 @@ def safe_str(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
-def load_json(path: str | Path) -> Dict[str, Any]:
+def load_json(path: Union[str, Path]) -> Dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def save_json(data: Dict[str, Any], path: str | Path) -> None:
+def save_json(data: Dict[str, Any], path: Union[str, Path]) -> None:
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -758,10 +758,11 @@ def evaluate_extracted_scenes(
 def evaluate_coc_pair(
     reference_summary: str,
     candidate_summary: str,
-    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    output_dir: Union[str, Path] = DEFAULT_OUTPUT_DIR,
     model: str = DEFAULT_MODEL,
     base_url: str = DEFAULT_BASE_URL,
     api_key: str = "EMPTY",
+    save_details: bool = True,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
     try:
@@ -776,8 +777,9 @@ def evaluate_coc_pair(
         extraction_mode = "local_fallback"
         fallback_error = f"{type(exc).__name__}: {exc}"
 
-    save_json(reference_scene, output_dir / "reference.json")
-    save_json(candidate_scene, output_dir / "candidate.json")
+    if save_details:
+        save_json(reference_scene, output_dir / "reference.json")
+        save_json(candidate_scene, output_dir / "candidate.json")
 
     final_result = evaluate_extracted_scenes(
         reference_scene=reference_scene,
@@ -785,17 +787,20 @@ def evaluate_coc_pair(
         client=client,
         model=model,
     )
-    final_result["json_files"] = {
-        "reference": str(output_dir / "reference.json"),
-        "candidate": str(output_dir / "candidate.json"),
-    }
+    final_result["json_files"] = {}
+    if save_details:
+        final_result["json_files"] = {
+            "reference": str(output_dir / "reference.json"),
+            "candidate": str(output_dir / "candidate.json"),
+        }
     final_result["extraction_mode"] = extraction_mode
     if extraction_mode == "local_fallback":
         final_result["fallback_error"] = fallback_error
         final_result["compact_result"]["extraction_mode"] = extraction_mode
 
-    save_json({"factor_pairs": final_result["factor_pairs"], "action_score": final_result["action_score"]}, output_dir / "coarse_and_merged.json")
-    save_json({"fine_comparisons": final_result["fine_comparisons"], "llm_result": final_result["llm_detail_score"]}, output_dir / "fine_score.json")
-    save_json(final_result["compact_result"], output_dir / "compact_result.json")
-    save_json(final_result, output_dir / "final_result.json")
+    if save_details:
+        save_json({"factor_pairs": final_result["factor_pairs"], "action_score": final_result["action_score"]}, output_dir / "coarse_and_merged.json")
+        save_json({"fine_comparisons": final_result["fine_comparisons"], "llm_result": final_result["llm_detail_score"]}, output_dir / "fine_score.json")
+        save_json(final_result["compact_result"], output_dir / "compact_result.json")
+        save_json(final_result, output_dir / "final_result.json")
     return final_result

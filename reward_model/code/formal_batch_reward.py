@@ -1,8 +1,9 @@
 import argparse
+import csv
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from formal_reward_core import (
     DEFAULT_BASE_URL,
@@ -155,10 +156,11 @@ def combine_task_and_text_reward(
 def evaluate_one_pair_with_extra_reward(
     reference: str,
     candidate: str,
-    output_dir: str | Path,
+    output_dir: Union[str, Path],
     model: str = DEFAULT_MODEL,
     base_url: str = DEFAULT_BASE_URL,
     api_key: str = "EMPTY",
+    save_case_details: bool = False,
 ) -> Dict[str, Any]:
     result = evaluate_coc_pair(
         reference_summary=reference,
@@ -167,27 +169,86 @@ def evaluate_one_pair_with_extra_reward(
         model=model,
         base_url=base_url,
         api_key=api_key,
+        save_details=save_case_details,
     )
     compact = result["compact_result"]
     task_score = float(compact["summary_score"]["normalized_total_score"])
     text_reward = text_quality_reward(candidate)
     compact["text_quality_reward"] = text_reward
     compact["final_reward"] = combine_task_and_text_reward(task_score, text_reward["score"])
-    save_json(compact, Path(output_dir) / "compact_result_with_extra_reward.json")
+    if save_case_details:
+        save_json(compact, Path(output_dir) / "compact_result_with_extra_reward.json")
     return compact
 
 
+def normalize_pair_item(item: Any, fallback_index: int) -> Dict[str, Any]:
+    if isinstance(item, dict):
+        return {
+            "index": item.get("index", fallback_index),
+            "reference": item["reference"],
+            "candidate": item["candidate"],
+        }
+    return {"index": fallback_index, "reference": item[0], "candidate": item[1]}
+
+
+def build_score_item(index: Any, reference: str, candidate: str, compact: Dict[str, Any]) -> Dict[str, Any]:
+    summary_score = compact["summary_score"]
+    return {
+        "index": index,
+        "reference": reference,
+        "candidate": candidate,
+        "factor_scores": summary_score.get("factor_scores", []),
+        "action_scores": summary_score.get("action_scores", {}),
+    }
+
+
+def save_score_items_csv(score_items: Sequence[Dict[str, Any]], path: Union[str, Path]) -> None:
+    output_path = Path(path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "index",
+        "reference",
+        "candidate",
+        "factor_scores",
+        "action_lat",
+        "action_lon",
+        "action_strategy",
+    ]
+    with output_path.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames)
+        writer.writeheader()
+        for item in score_items:
+            action_scores = item.get("action_scores", {})
+            writer.writerow(
+                {
+                    "index": item.get("index"),
+                    "reference": item.get("reference"),
+                    "candidate": item.get("candidate"),
+                    "factor_scores": json.dumps(item.get("factor_scores", []), ensure_ascii=False),
+                    "action_lat": action_scores.get("lat", 0.0),
+                    "action_lon": action_scores.get("lon", 0.0),
+                    "action_strategy": action_scores.get("strategy", 0.0),
+                }
+            )
+
+
 def evaluate_pair_list(
-    pairs: Sequence[Tuple[str, str]],
-    output_dir: str | Path = DEFAULT_BATCH_OUTPUT_DIR,
+    pairs: Sequence[Any],
+    output_dir: Union[str, Path] = DEFAULT_BATCH_OUTPUT_DIR,
     model: str = DEFAULT_MODEL,
     base_url: str = DEFAULT_BASE_URL,
     api_key: str = "EMPTY",
+    save_case_details: bool = False,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
     results = []
-    for index, (reference, candidate) in enumerate(pairs, start=1):
-        item_output_dir = output_dir / f"case_{index:03d}"
+    score_items = []
+    for fallback_index, raw_item in enumerate(pairs, start=1):
+        pair = normalize_pair_item(raw_item, fallback_index)
+        index = pair["index"]
+        reference = pair["reference"]
+        candidate = pair["candidate"]
+        item_output_dir = output_dir / f"case_{fallback_index:03d}"
         compact = evaluate_one_pair_with_extra_reward(
             reference=reference,
             candidate=candidate,
@@ -195,14 +256,16 @@ def evaluate_pair_list(
             model=model,
             base_url=base_url,
             api_key=api_key,
+            save_case_details=save_case_details,
         )
+        score_items.append(build_score_item(index, reference, candidate, compact))
         results.append(
             {
                 "index": index,
                 "reference": reference,
                 "candidate": candidate,
                 "result": compact,
-                "output_dir": str(item_output_dir),
+                "output_dir": str(item_output_dir) if save_case_details else "",
             }
         )
 
@@ -215,25 +278,32 @@ def evaluate_pair_list(
         "avg_task_score": round(sum(task_scores) / len(task_scores), 4) if task_scores else 0.0,
         "avg_text_quality_score": round(sum(text_scores) / len(text_scores), 4) if text_scores else 0.0,
     }
-    batch_result = {"summary": summary, "results": results}
+    batch_result = {"summary": summary, "score_items": score_items}
+    if save_case_details:
+        batch_result["results"] = results
     save_json(batch_result, output_dir / "batch_result.json")
+    save_json({"items": score_items}, output_dir / "score_items.json")
+    save_score_items_csv(score_items, output_dir / "score_items.csv")
     return batch_result
 
 
-def load_pairs(path: str | Path) -> List[Tuple[str, str]]:
+def load_pairs(path: Union[str, Path]) -> List[Any]:
     data_path = Path(path).expanduser()
     data = json.loads(data_path.read_text(encoding="utf-8"))
     pairs = []
-    for item in data:
+    for fallback_index, item in enumerate(data, start=1):
         if isinstance(item, dict):
-            pairs.append((item["reference"], item["candidate"]))
+            pairs.append(normalize_pair_item(item, fallback_index))
         else:
-            pairs.append((item[0], item[1]))
+            pairs.append(normalize_pair_item(item, fallback_index))
     return pairs
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run batch reward evaluation for CoC summary pairs.")
+    parser = argparse.ArgumentParser(
+        description="Run batch reward evaluation for CoC summary pairs.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
     parser.add_argument(
         "--pairs-json",
         default=str(DEFAULT_PAIRS_JSON),
@@ -243,6 +313,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=DEFAULT_MODEL, help="OpenAI-compatible model name")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL, help="OpenAI-compatible API base URL")
     parser.add_argument("--api-key", default="EMPTY", help="API key")
+    parser.add_argument(
+        "--save-case-details",
+        action="store_true",
+        help="保存每条样本的完整中间结果到 case_001、case_002 等子文件夹",
+    )
     return parser.parse_args()
 
 
@@ -256,6 +331,7 @@ def main() -> None:
         model=args.model,
         base_url=args.base_url,
         api_key=args.api_key,
+        save_case_details=args.save_case_details,
     )
     print(json.dumps(result["summary"], ensure_ascii=False, indent=2))
 
