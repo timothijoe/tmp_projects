@@ -13,6 +13,8 @@
 python3 reward_model/code/formal_batch_reward.py
 ```
 
+运行时会在命令行显示进度条，例如当前处理到第几条、总共多少条。
+
 默认行为：
 
 - 输入数据：`reward_model/data/pairs.json`
@@ -42,6 +44,16 @@ python3 reward_model/code/formal_batch_reward.py \
 ```bash
 python3 reward_model/code/formal_batch_reward.py --save-case-details
 ```
+
+如果不想显示进度条，增加：
+
+```bash
+python3 reward_model/code/formal_batch_reward.py --no-progress
+```
+
+## 因素匹配规则
+
+`summary_score.factor_scores` 使用一对一匹配：一个 candidate 因素最多只能匹配一个 reference 因素。这样可以避免候选句只说了一个因素时，被重复借给多个 reference 因素打分。
 
 `pairs.json` 支持两种格式：
 

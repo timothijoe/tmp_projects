@@ -415,6 +415,77 @@ def match_one_factor(
     }
 
 
+def unmatched_factor_pair(reference_factor: Dict[str, Any], candidate_rank: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    return {
+        "reference_factor": reference_factor,
+        "candidate_factor": None,
+        "coarse_score": 0.0,
+        "candidate_rank": candidate_rank or [],
+    }
+
+
+def match_factor_pairs_one_to_one(
+    reference_factors: Sequence[Dict[str, Any]],
+    candidate_factors: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    ranked_by_reference: List[List[Dict[str, Any]]] = [[] for _ in reference_factors]
+    all_ranked_pairs = []
+    for reference_index, reference_factor in enumerate(reference_factors):
+        for candidate_index, candidate_factor in enumerate(candidate_factors):
+            coarse_score = coarse_anchor_score(reference_factor, candidate_factor)
+            if coarse_score <= 0:
+                continue
+            sort_score = detail_sort_score(reference_factor.get("细节"), candidate_factor.get("细节"))
+            ranked_item = {
+                "candidate_factor": candidate_factor,
+                "coarse_score": coarse_score,
+                "sort_score": sort_score,
+                "rank": coarse_score * 10 + sort_score,
+            }
+            ranked_by_reference[reference_index].append(ranked_item)
+            all_ranked_pairs.append(
+                {
+                    "reference_index": reference_index,
+                    "candidate_index": candidate_index,
+                    "reference_factor": reference_factor,
+                    "candidate_factor": candidate_factor,
+                    "coarse_score": coarse_score,
+                    "rank": ranked_item["rank"],
+                }
+            )
+
+    for ranked_candidates in ranked_by_reference:
+        ranked_candidates.sort(key=lambda item: item["rank"], reverse=True)
+
+    matched_reference_indexes = set()
+    matched_candidate_indexes = set()
+    matched_pairs: Dict[int, Dict[str, Any]] = {}
+    all_ranked_pairs.sort(key=lambda item: item["rank"], reverse=True)
+    for pair in all_ranked_pairs:
+        reference_index = pair["reference_index"]
+        candidate_index = pair["candidate_index"]
+        if reference_index in matched_reference_indexes or candidate_index in matched_candidate_indexes:
+            continue
+        matched_reference_indexes.add(reference_index)
+        matched_candidate_indexes.add(candidate_index)
+        matched_pairs[reference_index] = {
+            "reference_factor": pair["reference_factor"],
+            "candidate_factor": pair["candidate_factor"],
+            "coarse_score": pair["coarse_score"],
+            "candidate_rank": ranked_by_reference[reference_index],
+        }
+
+    factor_pairs = []
+    for reference_index, reference_factor in enumerate(reference_factors):
+        factor_pairs.append(
+            matched_pairs.get(
+                reference_index,
+                unmatched_factor_pair(reference_factor, ranked_by_reference[reference_index]),
+            )
+        )
+    return factor_pairs
+
+
 def score_action_list(reference_list: Any, candidate_list: Any) -> float:
     reference_set = {safe_str(item) for item in (reference_list or []) if safe_str(item)}
     candidate_set = {safe_str(item) for item in (candidate_list or []) if safe_str(item)}
@@ -448,10 +519,10 @@ def score_actions(reference_action: Dict[str, Any], candidate_action: Dict[str, 
 
 
 def coarse_match(reference_scene: Dict[str, Any], candidate_scene: Dict[str, Any]) -> Dict[str, Any]:
-    factor_pairs = [
-        match_one_factor(reference_factor, candidate_scene.get("因素", []))
-        for reference_factor in reference_scene.get("因素", [])
-    ]
+    factor_pairs = match_factor_pairs_one_to_one(
+        reference_scene.get("因素", []),
+        candidate_scene.get("因素", []),
+    )
     return {
         "factor_pairs": factor_pairs,
         "action_score": score_actions(reference_scene.get("动作", {}), candidate_scene.get("动作", {})),
@@ -559,6 +630,46 @@ def extract_detail_scores(detail_score_result: Dict[str, Any], expected_len: int
     if len(scores) < expected_len:
         scores.extend([0.0] * (expected_len - len(scores)))
     return scores[:expected_len]
+
+
+def repair_detail_scores_with_local_rules(
+    detail_pairs: Sequence[Tuple[str, str]],
+    detail_score_result: Dict[str, Any],
+    detail_scores: Sequence[float],
+) -> Tuple[Dict[str, Any], List[float]]:
+    local_result = score_detail_pairs_locally(detail_pairs)
+    local_scores = extract_detail_scores(local_result, len(detail_pairs))
+    llm_results = list(detail_score_result.get("results", []) or [])
+    repaired_scores = list(detail_scores)
+    repaired_results = llm_results[: len(detail_pairs)]
+    changed = False
+
+    while len(repaired_scores) < len(detail_pairs):
+        repaired_scores.append(local_scores[len(repaired_scores)])
+        changed = True
+
+    while len(repaired_results) < len(detail_pairs):
+        repaired_results.append(local_result["results"][len(repaired_results)])
+        changed = True
+
+    for index, (reference_detail, candidate_detail) in enumerate(detail_pairs):
+        if safe_str(reference_detail) == safe_str(candidate_detail) and repaired_scores[index] < 1.0:
+            repaired_scores[index] = 1.0
+            repaired_results[index] = {
+                "reference_detail": reference_detail,
+                "candidate_detail": candidate_detail,
+                "relation": "相同细节，本地规则修正为满分",
+                "score": 1.0,
+            }
+            changed = True
+
+    if changed:
+        repaired_result = dict(detail_score_result)
+        repaired_result["results"] = repaired_results
+        repaired_result["repaired_by_local_rules"] = True
+        return repaired_result, repaired_scores
+
+    return detail_score_result, list(detail_scores)
 
 
 def merge_detail_scores(
@@ -737,8 +848,19 @@ def evaluate_extracted_scenes(
         detail_score_result = score_detail_pairs_locally(detail_pairs)
         detail_scores = extract_detail_scores(detail_score_result, len(detail_pairs))
     else:
-        detail_score_result = score_detail_pairs(detail_pairs, client=client, model=model)
-        detail_scores = extract_detail_scores(detail_score_result, len(detail_pairs))
+        try:
+            detail_score_result = score_detail_pairs(detail_pairs, client=client, model=model)
+            detail_scores = extract_detail_scores(detail_score_result, len(detail_pairs))
+        except Exception as exc:
+            detail_score_result = score_detail_pairs_locally(detail_pairs)
+            detail_score_result["detail_score_fallback_error"] = f"{type(exc).__name__}: {exc}"
+            detail_scores = extract_detail_scores(detail_score_result, len(detail_pairs))
+        else:
+            detail_score_result, detail_scores = repair_detail_scores_with_local_rules(
+                detail_pairs,
+                detail_score_result,
+                detail_scores,
+            )
 
     merged_pairs = merge_detail_scores(coarse_result["factor_pairs"], detail_scores)
     final_result = calculate_final_result(merged_pairs, coarse_result["action_score"])

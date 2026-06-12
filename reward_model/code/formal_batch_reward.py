@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -232,6 +233,18 @@ def save_score_items_csv(score_items: Sequence[Dict[str, Any]], path: Union[str,
             )
 
 
+def render_progress(current: int, total: int, width: int = 30) -> None:
+    if total <= 0:
+        return
+    filled = int(width * current / total)
+    bar = "#" * filled + "-" * (width - filled)
+    percent = current * 100 / total
+    sys.stderr.write(f"\rProgress: [{bar}] {current}/{total} ({percent:5.1f}%)")
+    if current >= total:
+        sys.stderr.write("\n")
+    sys.stderr.flush()
+
+
 def evaluate_pair_list(
     pairs: Sequence[Any],
     output_dir: Union[str, Path] = DEFAULT_BATCH_OUTPUT_DIR,
@@ -239,10 +252,12 @@ def evaluate_pair_list(
     base_url: str = DEFAULT_BASE_URL,
     api_key: str = "EMPTY",
     save_case_details: bool = False,
+    show_progress: bool = True,
 ) -> Dict[str, Any]:
     output_dir = Path(output_dir)
     results = []
     score_items = []
+    total = len(pairs)
     for fallback_index, raw_item in enumerate(pairs, start=1):
         pair = normalize_pair_item(raw_item, fallback_index)
         index = pair["index"]
@@ -268,6 +283,8 @@ def evaluate_pair_list(
                 "output_dir": str(item_output_dir) if save_case_details else "",
             }
         )
+        if show_progress:
+            render_progress(fallback_index, total)
 
     final_rewards = [item["result"]["final_reward"]["final_reward"] for item in results]
     task_scores = [item["result"]["final_reward"]["task_score"] for item in results]
@@ -318,6 +335,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="保存每条样本的完整中间结果到 case_001、case_002 等子文件夹",
     )
+    parser.add_argument("--no-progress", action="store_true", help="不在命令行显示批处理进度条")
     return parser.parse_args()
 
 
@@ -332,6 +350,7 @@ def main() -> None:
         base_url=args.base_url,
         api_key=args.api_key,
         save_case_details=args.save_case_details,
+        show_progress=not args.no_progress,
     )
     print(json.dumps(result["summary"], ensure_ascii=False, indent=2))
 
