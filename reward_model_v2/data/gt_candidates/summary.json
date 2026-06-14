@@ -1,0 +1,8 @@
+{
+  "record_count": 1284,
+  "source_count": 207,
+  "files": {
+    "pairs": "pairs.json",
+    "gt": "candidates_with_gt.json"
+  }
+}

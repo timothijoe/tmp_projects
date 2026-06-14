@@ -1,0 +1,32 @@
+{
+  "total_records": 1865,
+  "total_sources": 207,
+  "files": {
+    "compatible_all": "reward_candidates_pairs.json",
+    "labeled_all": "reward_candidates_pairs_with_labels.json",
+    "grouped_labeled": "reward_candidates_groups_with_labels.json"
+  },
+  "counts_by_error_type": {
+    "complete": 207,
+    "generalized": 207,
+    "missing_factor": 468,
+    "unsafe_action": 207,
+    "wrong_factor": 776
+  },
+  "counts_by_wrong_factor_subtype": {
+    "cross_category_swap": 281,
+    "direction_swap": 215,
+    "same_category_subtype_swap": 280
+  },
+  "counts_by_category": {
+    "blind_spot": 294,
+    "curve": 49,
+    "lane_change": 652,
+    "obstacle_avoidance": 366,
+    "road_condition": 80,
+    "special": 57,
+    "traffic_control": 6,
+    "traffic_signal": 194,
+    "yielding": 167
+  }
+}
