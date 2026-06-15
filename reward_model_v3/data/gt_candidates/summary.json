@@ -8,15 +8,9 @@
     "severe": 828
   },
   "error_type_counts": {
-    "complete": 461,
-    "wrong_action": 348,
-    "mixed_mutation": 1202,
-    "wrong_factor": 190,
-    "extra_factor": 317,
-    "missing_factor": 173
-  },
-  "files": {
-    "pairs": "pairs.json",
-    "gt": "candidates_with_gt.json"
+    "complete": 477,
+    "factor_only": 463,
+    "factor_and_action": 1348,
+    "action_only": 403
   }
 }

@@ -36,80 +36,112 @@ reward_model_v3/data/gt_candidates/summary.json
 
 `pairs.json` 仍然兼容 `formal_batch_reward.py`。
 
-`candidates_with_gt.json` 新增：
+`candidates_with_gt.json` 的核心字段：
 
-- `factor_mutations`: 每个 GT factor 的去向，以及新增 factor。
-- `action_mutations`: 每个 action 维度的变化。
-- `mutation_summary`: 从 mutation log 聚合出来的计数。
-- `provisional_gt_score`: 基于 factor/action mutation 的暂定总分。
-- `candidate_factors`: candidate 的结构化 factor 列表。
-- `candidate_action_schema`: candidate 的结构化 action。
+- `factor_changes`: 每个 factor 做了什么。
+- `factor_summary`: factor 变化计数。
+- `action_changes`: 每个 action 维度做了什么。
+- `action_summary`: action 变化计数。
+- `scores`: 基于变化记录计算的暂定分数。
 
-同时保留 V2 兼容字段：
-
-- `factor_edits`
-- `gt_factor_scores`
-- `gt_factor_avg`
-- `gt_action_scores`
-- `reference_action_schema`
-- `candidate_action_schema`
+V3 不再保留 V2 兼容字段，避免同一件事出现多套名字。
 
 ## Factor Mutation Types
 
-每个 GT factor 都会被独立处理：
+每个 GT factor 都会被独立处理，输出一条这样的记录：
+
+```json
+{
+  "factor_id": "gt_1",
+  "operation": "modify",
+  "change_types": ["DIRECTION", "SUB_CATEGORY"],
+  "from": {
+    "position": "前方",
+    "category": "车辆行为",
+    "detail": "两个行人缓慢移动"
+  },
+  "to": {
+    "position": "右前方",
+    "category": "车辆行为",
+    "detail": "车辆缓行"
+  },
+  "score": 0.35
+}
+```
+
+`operation` 只表示元素层面的动作：
 
 ```text
-KEEP_FACTOR
-REPLACE_FACTOR_VALUE
-REPLACE_DIRECTION
-REPLACE_SUB_CATEGORY
-REPLACE_SUPER_CATEGORY
+keep
+modify
+remove
+add
+```
+
+`change_types` 表示具体改了什么，可以叠加：
+
+```text
+VALUE
+DIRECTION
+SUB_CATEGORY
+SUPER_CATEGORY
 CROSS_CATEGORY
-REMOVE_FACTOR
+REMOVE
+ADD
 ```
 
-额外新增的 factor 记录为：
+新增 factor：
+
+```json
+{
+  "factor_id": "add_1",
+  "operation": "add",
+  "change_types": ["ADD"],
+  "from": null,
+  "to": {
+    "position": "左侧",
+    "category": "车辆行为",
+    "detail": "车辆切入"
+  },
+  "score": "extra_penalty"
+}
+```
+
+当前 provisional factor 分由变化类型扣分得到：
 
 ```text
-ADD_FACTOR
+VALUE: -0.15
+DIRECTION: -0.35
+SUB_CATEGORY: -0.30
+SUPER_CATEGORY: -0.55
+CROSS_CATEGORY: -0.75
+remove: 0.00
+add: 不进入 GT factor 平均分，额外扣 add_penalty
 ```
 
-当前 provisional factor 分：
+## Action Changes
 
-```text
-KEEP_FACTOR: 1.00
-REPLACE_FACTOR_VALUE: 0.85
-REPLACE_SUB_CATEGORY: 0.70
-REPLACE_DIRECTION: 0.65
-REPLACE_SUPER_CATEGORY: 0.45
-CROSS_CATEGORY: 0.25
-REMOVE_FACTOR: 0.00
-ADD_FACTOR: 不进入 recall average，额外扣 add_factor_penalty
+action 按 `lat/lon/strategy` 三个维度独立处理，字段结构和 factor 类似，但更简单：
+
+```json
+{
+  "dimension": "lat",
+  "operation": "replace",
+  "from": ["避让"],
+  "to": ["换道"]
+}
 ```
-
-## Action Mutation Types
-
-action 按 `lat/lon/strategy` 三个维度独立处理：
-
-```text
-KEEP_ACTION
-REPLACE_ACTION
-CONFLICT_ACTION
-REMOVE_ACTION
-```
-
-action 分数由 `formal_reward_core.score_actions()` 计算，输出到 `gt_action_scores`。
 
 ## Provisional Score
 
 当前暂定规则：
 
 ```text
-factor_avg = avg(per_gt_factor_score)
-add_factor_penalty = min(0.25, 0.06 * num_added_factors)
-factor_after_add_penalty = max(0, factor_avg - add_factor_penalty)
+factor_avg = avg(scores for gt_* factors)
+add_penalty = min(0.25, 0.06 * num_added_factors)
+factor_score_after_add_penalty = max(0, factor_avg - add_penalty)
 action_avg = avg(lat/lon/strategy action scores)
-provisional_gt_score = 0.75 * factor_after_add_penalty + 0.25 * action_avg
+provisional_score = 0.75 * factor_score_after_add_penalty + 0.25 * action_avg
 ```
 
 这个分数是后续标定的起点，不是最终 rubric。
