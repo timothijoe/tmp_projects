@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Dict, List
 
+from formal_reward_core import score_actions
+
 
 DIRECTION_SWAP = {
     "左前方": "右前方",
@@ -73,7 +75,31 @@ def gt_avg(scores: List[float]) -> float:
     return round(sum(scores) / len(scores), 4) if scores else 0.0
 
 
+def formal_action(action_schema: Dict) -> Dict:
+    raw = action_schema.get("raw") if isinstance(action_schema, dict) else None
+    if raw:
+        return raw
+    if isinstance(action_schema, dict) and any(key in action_schema for key in ["横向决策", "纵向决策", "执行策略"]):
+        return {
+            "横向决策": action_schema.get("横向决策", ["保持"]),
+            "纵向决策": action_schema.get("纵向决策", ["保持"]),
+            "执行策略": action_schema.get("执行策略", "直接执行"),
+        }
+    return {
+        "横向决策": action_schema.get("lat", ["保持"]) if isinstance(action_schema, dict) else ["保持"],
+        "纵向决策": action_schema.get("lon", ["保持"]) if isinstance(action_schema, dict) else ["保持"],
+        "执行策略": action_schema.get("strategy", "直接执行") if isinstance(action_schema, dict) else "直接执行",
+    }
+
+
+def gt_action_scores(reference_action_schema: Dict, candidate_action_schema: Dict | None = None) -> Dict[str, float]:
+    candidate_action_schema = candidate_action_schema or reference_action_schema
+    return score_actions(formal_action(reference_action_schema), formal_action(candidate_action_schema))
+
+
 def base_record(index: int, schema: Dict, candidate: str, error_type: str, scores: List[float], edits: List[Dict], subtype: str = "") -> Dict:
+    reference_action_schema = schema.get("action_schema", {})
+    candidate_action_schema = reference_action_schema
     return {
         "index": index,
         "source_id": schema["source_id"],
@@ -84,8 +110,11 @@ def base_record(index: int, schema: Dict, candidate: str, error_type: str, score
         "factor_error_subtype": subtype,
         "gt_factor_scores": scores,
         "gt_factor_avg": gt_avg(scores),
+        "gt_action_scores": gt_action_scores(reference_action_schema, candidate_action_schema),
         "factor_edits": edits,
         "reference_factors": schema["factors"],
+        "reference_action_schema": reference_action_schema,
+        "candidate_action_schema": candidate_action_schema,
     }
 
 

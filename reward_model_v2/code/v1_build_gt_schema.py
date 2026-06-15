@@ -27,6 +27,16 @@ def action_text(sentence: str) -> str:
     return "自车应谨慎通行"
 
 
+def build_action_schema(scene: dict) -> dict:
+    action = scene.get("动作", {}) or {}
+    return {
+        "lat": action.get("横向决策", ["保持"]),
+        "lon": action.get("纵向决策", ["保持"]),
+        "strategy": action.get("执行策略", "直接执行"),
+        "raw": action,
+    }
+
+
 def extract_scene_with_fallback(
     source: str,
     model: str = DEFAULT_MODEL,
@@ -74,12 +84,13 @@ def build_schema(
                 "text_span": factor.get("原文片段", ""),
             }
         )
+    action_schema = build_action_schema(scene)
     return {
         "source_id": source_id,
         "source": source,
         "action_text": action_text(source),
         "factors": factors,
-        "action_schema": scene.get("动作", {}),
+        "action_schema": action_schema,
         "extraction_mode": extraction_mode,
         "fallback_error": fallback_error,
         "raw_scene": scene,

@@ -69,11 +69,17 @@ def build_comparison_rows(gt_rows: List[Dict[str, Any]], actual_by_index: Dict[i
         actual = actual_by_index.get(index, {})
         actual_found = index in actual_by_index
         actual_scores = actual.get("actual_factor_scores", [])
+        actual_action_scores = actual.get("actual_action_scores", {})
         gt_scores = gt.get("gt_factor_scores", [])
+        gt_action_scores = gt.get("gt_action_scores", {})
         aligned = align_scores(gt_scores, actual_scores)
         gt_avg = float(gt.get("gt_factor_avg", 0.0))
         actual_avg = float(actual.get("actual_factor_avg", 0.0))
         avg_delta = round(actual_avg - gt_avg, 4)
+        action_diffs = {
+            key: round(float(actual_action_scores.get(key, 0.0)) - float(gt_action_scores.get(key, 0.0)), 4)
+            for key in ["lat", "lon", "strategy"]
+        }
         success = actual_found and aligned["max_abs_factor_diff"] <= tolerance
         rows.append(
             {
@@ -84,6 +90,9 @@ def build_comparison_rows(gt_rows: List[Dict[str, Any]], actual_by_index: Dict[i
                 "factor_error_subtype": gt.get("factor_error_subtype"),
                 "gt_factor_scores": json.dumps(gt_scores, ensure_ascii=False),
                 "actual_factor_scores": json.dumps(actual_scores, ensure_ascii=False),
+                "gt_action_scores": json.dumps(gt_action_scores, ensure_ascii=False),
+                "actual_action_scores": json.dumps(actual_action_scores, ensure_ascii=False),
+                "action_score_diffs": json.dumps(action_diffs, ensure_ascii=False),
                 "gt_factor_avg": gt_avg,
                 "actual_factor_avg": actual_avg,
                 "factor_avg_delta": avg_delta,
@@ -146,6 +155,9 @@ def main() -> None:
             "factor_error_subtype",
             "gt_factor_scores",
             "actual_factor_scores",
+            "gt_action_scores",
+            "actual_action_scores",
+            "action_score_diffs",
             "gt_factor_avg",
             "actual_factor_avg",
             "factor_avg_delta",
@@ -172,6 +184,9 @@ def main() -> None:
             "factor_error_subtype",
             "gt_factor_scores",
             "actual_factor_scores",
+            "gt_action_scores",
+            "actual_action_scores",
+            "action_score_diffs",
             "gt_factor_avg",
             "actual_factor_avg",
             "max_abs_factor_diff",

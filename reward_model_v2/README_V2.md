@@ -45,6 +45,9 @@ reward_model_v2/data/gt_candidates/summary.json
 - `factor_edits`
 - `gt_factor_scores`
 - `gt_factor_avg`
+- `gt_action_scores`
+- `reference_action_schema`
+- `candidate_action_schema`
 
 ## Step 3: 跑 Formal Reward
 
@@ -93,4 +96,4 @@ reward_model_v2/outputs/gt_comparison/summary_by_category.csv
 
 `gt_factor_avg = sum(gt_factor_scores) / reference_factor_count`
 
-V2 暂时只评估 factor，不评估 action。
+V2 当前以 factor 为主要评估对象，同时保留 action schema 和 `gt_action_scores`，用于和 formal reward 输出的 `action_scores` 对齐。
