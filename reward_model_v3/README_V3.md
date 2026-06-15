@@ -38,11 +38,11 @@ reward_model_v3/data/gt_candidates/summary.json
 
 `candidates_with_gt.json` 的核心字段：
 
-- `factor_changes`: 每个 factor 做了什么。
-- `factor_labels`: 整条样本的 factor 变化标签。
+- `per_factor_labels`: 每个 factor 的变化标签；一句话有多个 factor，就有多条 `gt_*` 记录。
+- `sample_factor_labels`: 整条样本的 factor 聚合标签。
 - `factor_summary`: factor 变化计数。
-- `action_changes`: 每个 action 维度做了什么。
-- `action_labels`: 整条样本的 action 变化标签。
+- `per_action_labels`: 每个 action 维度的变化标签。
+- `sample_action_labels`: 整条样本的 action 聚合标签。
 - `action_summary`: action 变化计数。
 - `scores`: 基于变化记录计算的暂定分数。
 
@@ -50,7 +50,7 @@ V3 不再保留 V2 兼容字段，避免同一件事出现多套名字。
 
 ## Factor Mutation Types
 
-每个 GT factor 都会被独立处理，输出一条这样的记录：
+每个 GT factor 都会被独立处理，并在 `per_factor_labels` 里输出一条记录。多个 factor 就会有多条 `gt_*` 记录：
 
 ```json
 {
@@ -115,7 +115,7 @@ add
 }
 ```
 
-整条样本会额外给一组聚合 label：
+整条样本会额外在 `sample_factor_labels` 里给一组聚合 label：
 
 ```json
 {
@@ -146,7 +146,7 @@ add: 不进入 GT factor 平均分，额外扣 add_penalty
 
 ## Action Changes
 
-action 按 `lat/lon/strategy` 三个维度独立处理，字段结构和 factor 类似，但更简单：
+action 按 `lat/lon/strategy` 三个维度独立处理，输出到 `per_action_labels`：
 
 ```json
 {
@@ -159,7 +159,7 @@ action 按 `lat/lon/strategy` 三个维度独立处理，字段结构和 factor 
 }
 ```
 
-整条样本的 action 聚合 label：
+整条样本的 action 聚合 label 输出到 `sample_action_labels`：
 
 ```json
 {

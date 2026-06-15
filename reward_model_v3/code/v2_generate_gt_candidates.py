@@ -382,7 +382,7 @@ def summarize_action_changes(action_changes: List[Dict[str, Any]]) -> Dict[str, 
     }
 
 
-def factor_labels_for_record(factor_summary: Dict[str, Any]) -> Dict[str, Any]:
+def sample_factor_labels(factor_summary: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "category_change_label": "has_category_change" if factor_summary["category_changed"] else "no_category_change",
         "detail_change_label": "has_detail_change" if factor_summary["detail_changed"] else "no_detail_change",
@@ -397,7 +397,7 @@ def factor_labels_for_record(factor_summary: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def action_labels_for_record(action_changes: List[Dict[str, Any]]) -> Dict[str, Any]:
+def sample_action_labels(action_changes: List[Dict[str, Any]]) -> Dict[str, Any]:
     changed = [item for item in action_changes if item["is_changed"]]
     count = len(changed)
     labels = {
@@ -460,10 +460,10 @@ def build_record(index: int, schema: Dict[str, Any], severity: str, rng: random.
     candidate_action, action_changes = mutate_action(reference_action, severity, rng, force_keep=force_complete)
 
     candidate_factors = []
-    factor_changes = []
+    per_factor_labels = []
     for factor in schema.get("factors", []):
         changed_factor, change = mutate_factor(factor, severity, rng, force_keep=force_complete)
-        factor_changes.append(change)
+        per_factor_labels.append(change)
         if changed_factor is not None:
             candidate_factors.append(changed_factor)
 
@@ -471,13 +471,13 @@ def build_record(index: int, schema: Dict[str, Any], severity: str, rng: random.
     for add_index in range(1, add_count + 1):
         added_factor, change = add_factor_change(rng, add_index)
         candidate_factors.append(added_factor)
-        factor_changes.append(change)
+        per_factor_labels.append(change)
 
-    factor_summary = summarize_factor_changes(factor_changes)
+    factor_summary = summarize_factor_changes(per_factor_labels)
     action_summary = summarize_action_changes(action_changes)
-    factor_record_labels = factor_labels_for_record(factor_summary)
-    action_record_labels = action_labels_for_record(action_changes)
-    scores = provisional_score(factor_changes, reference_action, candidate_action)
+    record_factor_labels = sample_factor_labels(factor_summary)
+    record_action_labels = sample_action_labels(action_changes)
+    scores = provisional_score(per_factor_labels, reference_action, candidate_action)
     return {
         "index": index,
         "source_id": schema["source_id"],
@@ -486,11 +486,11 @@ def build_record(index: int, schema: Dict[str, Any], severity: str, rng: random.
         "category": primary_category(schema),
         "severity_level": "complete" if force_complete else severity,
         "error_type": error_type(factor_summary, action_summary),
-        "factor_labels": factor_record_labels,
-        "factor_changes": factor_changes,
+        "sample_factor_labels": record_factor_labels,
+        "per_factor_labels": per_factor_labels,
         "factor_summary": factor_summary,
-        "action_labels": action_record_labels,
-        "action_changes": action_changes,
+        "sample_action_labels": record_action_labels,
+        "per_action_labels": action_changes,
         "action_summary": action_summary,
         "scores": scores,
     }
