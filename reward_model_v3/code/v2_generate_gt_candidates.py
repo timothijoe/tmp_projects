@@ -207,6 +207,57 @@ def score_factor_change(operation: str, change_types: List[str]) -> float:
     return round(max(0.0, 1.0 - penalty), 4)
 
 
+def factor_labels(operation: str, change_types: List[str]) -> Dict[str, Any]:
+    if operation == "add":
+        return {
+            "category_change_label": "not_applicable",
+            "detail_change_label": "not_applicable",
+            "direction_change_label": "not_applicable",
+            "delete_label": "not_deleted",
+            "add_label": "added_factor",
+            "is_category_changed": False,
+            "is_detail_changed": False,
+            "is_direction_changed": False,
+            "is_deleted": False,
+            "is_added": True,
+        }
+    if operation == "remove":
+        return {
+            "category_change_label": "not_applicable",
+            "detail_change_label": "not_applicable",
+            "direction_change_label": "not_applicable",
+            "delete_label": "deleted_factor",
+            "add_label": "not_added",
+            "is_category_changed": False,
+            "is_detail_changed": False,
+            "is_direction_changed": False,
+            "is_deleted": True,
+            "is_added": False,
+        }
+
+    category_changed = "SUPER_CATEGORY" in change_types or "CROSS_CATEGORY" in change_types
+    detail_changed = any(item in change_types for item in ["VALUE", "SUB_CATEGORY", "SUPER_CATEGORY", "CROSS_CATEGORY"])
+    direction_changed = "DIRECTION" in change_types
+    if "CROSS_CATEGORY" in change_types:
+        category_label = "cross_category_changed"
+    elif "SUPER_CATEGORY" in change_types:
+        category_label = "super_category_changed"
+    else:
+        category_label = "category_unchanged"
+    return {
+        "category_change_label": category_label,
+        "detail_change_label": "detail_changed" if detail_changed else "detail_unchanged",
+        "direction_change_label": "direction_changed" if direction_changed else "direction_unchanged",
+        "delete_label": "not_deleted",
+        "add_label": "not_added",
+        "is_category_changed": category_changed,
+        "is_detail_changed": detail_changed,
+        "is_direction_changed": direction_changed,
+        "is_deleted": False,
+        "is_added": False,
+    }
+
+
 def make_added_factor(rng: random.Random) -> Dict[str, str]:
     category = rng.choice(CATEGORIES)
     return {
@@ -230,10 +281,11 @@ def mutate_factor(factor: Dict[str, Any], severity: str, rng: random.Random, for
         change_types = choose_change_types(severity, rng)
         to_factor = apply_factor_changes(factor, change_types, rng)
 
+    labels = factor_labels(operation, change_types)
     return to_factor, {
         "factor_id": f"gt_{factor.get('factor_index')}",
         "operation": operation,
-        "change_types": change_types,
+        **labels,
         "from": compact_factor(factor),
         "to": compact_factor(to_factor),
         "score": score_factor_change(operation, [item for item in change_types if item != "REMOVE"]),
@@ -245,7 +297,7 @@ def add_factor_change(rng: random.Random, add_index: int) -> tuple[Dict[str, Any
     return factor, {
         "factor_id": f"add_{add_index}",
         "operation": "add",
-        "change_types": ["ADD"],
+        **factor_labels("add", ["ADD"]),
         "from": None,
         "to": compact_factor(factor),
         "score": "extra_penalty",
@@ -286,6 +338,8 @@ def mutate_action(action_schema: Dict[str, Any], severity: str, rng: random.Rand
             {
                 "dimension": dimension,
                 "operation": operation,
+                "change_label": "unchanged" if operation == "keep" else f"{dimension}_{operation}",
+                "is_changed": operation != "keep",
                 "from": reference[dimension],
                 "to": new_value,
             }
@@ -299,19 +353,22 @@ def action_scores(reference_action: Dict[str, Any], candidate_action: Dict[str, 
 
 def summarize_factor_changes(factor_changes: List[Dict[str, Any]]) -> Dict[str, Any]:
     operation_counts = Counter(item["operation"] for item in factor_changes)
-    change_counts = Counter(change for item in factor_changes for change in item["change_types"])
     return {
         "gt_factor_count": sum(1 for item in factor_changes if item["factor_id"].startswith("gt_")),
         "kept": operation_counts["keep"],
         "modified": operation_counts["modify"],
         "removed": operation_counts["remove"],
         "added": operation_counts["add"],
-        "direction_changed": change_counts["DIRECTION"],
-        "value_changed": change_counts["VALUE"],
-        "sub_category_changed": change_counts["SUB_CATEGORY"],
-        "super_category_changed": change_counts["SUPER_CATEGORY"],
-        "cross_category_changed": change_counts["CROSS_CATEGORY"],
-        "stacked_changed": sum(1 for item in factor_changes if item["operation"] == "modify" and len(item["change_types"]) > 1),
+        "category_changed": sum(1 for item in factor_changes if item["is_category_changed"]),
+        "detail_changed": sum(1 for item in factor_changes if item["is_detail_changed"]),
+        "direction_changed": sum(1 for item in factor_changes if item["is_direction_changed"]),
+        "deleted": sum(1 for item in factor_changes if item["is_deleted"]),
+        "added_label_count": sum(1 for item in factor_changes if item["is_added"]),
+        "stacked_changed": sum(
+            1
+            for item in factor_changes
+            if sum([item["is_category_changed"], item["is_detail_changed"], item["is_direction_changed"]]) > 1
+        ),
     }
 
 
@@ -322,6 +379,38 @@ def summarize_action_changes(action_changes: List[Dict[str, Any]]) -> Dict[str, 
         "replaced": counts["replace"],
         "conflicted": counts["conflict"],
         "removed": counts["remove"],
+    }
+
+
+def factor_labels_for_record(factor_summary: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "category_change_label": "has_category_change" if factor_summary["category_changed"] else "no_category_change",
+        "detail_change_label": "has_detail_change" if factor_summary["detail_changed"] else "no_detail_change",
+        "direction_change_label": "has_direction_change" if factor_summary["direction_changed"] else "no_direction_change",
+        "delete_label": "has_deleted_factor" if factor_summary["deleted"] else "no_deleted_factor",
+        "add_label": "has_added_factor" if factor_summary["added"] else "no_added_factor",
+        "num_category_changed_factors": factor_summary["category_changed"],
+        "num_detail_changed_factors": factor_summary["detail_changed"],
+        "num_direction_changed_factors": factor_summary["direction_changed"],
+        "num_deleted_factors": factor_summary["deleted"],
+        "num_added_factors": factor_summary["added"],
+    }
+
+
+def action_labels_for_record(action_changes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    changed = [item for item in action_changes if item["is_changed"]]
+    count = len(changed)
+    labels = {
+        0: "no_action_change",
+        1: "one_action_dimension_changed",
+        2: "two_action_dimensions_changed",
+        3: "three_action_dimensions_changed",
+    }
+    return {
+        "action_change_label": labels.get(count, f"{count}_action_dimensions_changed"),
+        "num_changed_action_dimensions": count,
+        "changed_action_dimensions": [item["dimension"] for item in changed],
+        "changed_action_operations": [item["operation"] for item in changed],
     }
 
 
@@ -386,6 +475,8 @@ def build_record(index: int, schema: Dict[str, Any], severity: str, rng: random.
 
     factor_summary = summarize_factor_changes(factor_changes)
     action_summary = summarize_action_changes(action_changes)
+    factor_record_labels = factor_labels_for_record(factor_summary)
+    action_record_labels = action_labels_for_record(action_changes)
     scores = provisional_score(factor_changes, reference_action, candidate_action)
     return {
         "index": index,
@@ -395,8 +486,10 @@ def build_record(index: int, schema: Dict[str, Any], severity: str, rng: random.
         "category": primary_category(schema),
         "severity_level": "complete" if force_complete else severity,
         "error_type": error_type(factor_summary, action_summary),
+        "factor_labels": factor_record_labels,
         "factor_changes": factor_changes,
         "factor_summary": factor_summary,
+        "action_labels": action_record_labels,
         "action_changes": action_changes,
         "action_summary": action_summary,
         "scores": scores,

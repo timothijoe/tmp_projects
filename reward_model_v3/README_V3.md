@@ -39,8 +39,10 @@ reward_model_v3/data/gt_candidates/summary.json
 `candidates_with_gt.json` 的核心字段：
 
 - `factor_changes`: 每个 factor 做了什么。
+- `factor_labels`: 整条样本的 factor 变化标签。
 - `factor_summary`: factor 变化计数。
 - `action_changes`: 每个 action 维度做了什么。
+- `action_labels`: 整条样本的 action 变化标签。
 - `action_summary`: action 变化计数。
 - `scores`: 基于变化记录计算的暂定分数。
 
@@ -54,7 +56,16 @@ V3 不再保留 V2 兼容字段，避免同一件事出现多套名字。
 {
   "factor_id": "gt_1",
   "operation": "modify",
-  "change_types": ["DIRECTION", "SUB_CATEGORY"],
+  "category_change_label": "category_unchanged",
+  "detail_change_label": "detail_changed",
+  "direction_change_label": "direction_changed",
+  "delete_label": "not_deleted",
+  "add_label": "not_added",
+  "is_category_changed": false,
+  "is_detail_changed": true,
+  "is_direction_changed": true,
+  "is_deleted": false,
+  "is_added": false,
   "from": {
     "position": "前方",
     "category": "车辆行为",
@@ -78,25 +89,22 @@ remove
 add
 ```
 
-`change_types` 表示具体改了什么，可以叠加：
-
-```text
-VALUE
-DIRECTION
-SUB_CATEGORY
-SUPER_CATEGORY
-CROSS_CATEGORY
-REMOVE
-ADD
-```
-
 新增 factor：
 
 ```json
 {
   "factor_id": "add_1",
   "operation": "add",
-  "change_types": ["ADD"],
+  "category_change_label": "not_applicable",
+  "detail_change_label": "not_applicable",
+  "direction_change_label": "not_applicable",
+  "delete_label": "not_deleted",
+  "add_label": "added_factor",
+  "is_category_changed": false,
+  "is_detail_changed": false,
+  "is_direction_changed": false,
+  "is_deleted": false,
+  "is_added": true,
   "from": null,
   "to": {
     "position": "左侧",
@@ -104,6 +112,23 @@ ADD
     "detail": "车辆切入"
   },
   "score": "extra_penalty"
+}
+```
+
+整条样本会额外给一组聚合 label：
+
+```json
+{
+  "category_change_label": "has_category_change",
+  "detail_change_label": "has_detail_change",
+  "direction_change_label": "no_direction_change",
+  "delete_label": "no_deleted_factor",
+  "add_label": "has_added_factor",
+  "num_category_changed_factors": 1,
+  "num_detail_changed_factors": 1,
+  "num_direction_changed_factors": 0,
+  "num_deleted_factors": 0,
+  "num_added_factors": 1
 }
 ```
 
@@ -127,8 +152,21 @@ action 按 `lat/lon/strategy` 三个维度独立处理，字段结构和 factor 
 {
   "dimension": "lat",
   "operation": "replace",
+  "change_label": "lat_replace",
+  "is_changed": true,
   "from": ["避让"],
   "to": ["换道"]
+}
+```
+
+整条样本的 action 聚合 label：
+
+```json
+{
+  "action_change_label": "two_action_dimensions_changed",
+  "num_changed_action_dimensions": 2,
+  "changed_action_dimensions": ["lat", "lon"],
+  "changed_action_operations": ["replace", "conflict"]
 }
 ```
 
