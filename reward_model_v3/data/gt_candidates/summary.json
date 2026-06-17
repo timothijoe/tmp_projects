@@ -8,9 +8,9 @@
     "severe": 828
   },
   "error_type_counts": {
-    "complete": 477,
-    "factor_only": 463,
-    "factor_and_action": 1348,
-    "action_only": 403
+    "complete": 518,
+    "factor_only": 541,
+    "factor_and_action": 1270,
+    "action_only": 362
   }
 }

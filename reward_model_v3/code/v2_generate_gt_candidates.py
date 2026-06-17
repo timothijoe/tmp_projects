@@ -331,13 +331,15 @@ def mutate_action(action_schema: Dict[str, Any], severity: str, rng: random.Rand
     candidate = normalize_action_schema(action_schema)
     changes = []
     for dimension in ["lat", "lon", "strategy"]:
-        operation = "keep" if force_keep else weighted_choice(rng, ACTION_OPERATION_WEIGHTS[severity])
-        new_value = mutate_action_dimension(reference[dimension], dimension, operation, rng)
+        sampled_operation = "keep" if force_keep else weighted_choice(rng, ACTION_OPERATION_WEIGHTS[severity])
+        new_value = mutate_action_dimension(reference[dimension], dimension, sampled_operation, rng)
+        operation = sampled_operation if new_value != reference[dimension] else "keep"
         candidate[dimension] = new_value
         changes.append(
             {
                 "dimension": dimension,
                 "operation": operation,
+                "sampled_operation": sampled_operation,
                 "change_label": "unchanged" if operation == "keep" else f"{dimension}_{operation}",
                 "is_changed": operation != "keep",
                 "from": reference[dimension],
